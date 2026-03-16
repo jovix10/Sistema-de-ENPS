@@ -6,6 +6,7 @@ import plotly.express as px
 from fpdf import FPDF
 import io
 import datetime
+import os
 
 # 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Gestão de Engajamento FIEAC", layout="wide")
@@ -19,7 +20,6 @@ def conectar():
 def configurar_banco_inicial():
     conn = conectar()
     cursor = conn.cursor()
-    # Tabela de Usuários com a nova coluna Unidade
     cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         nome TEXT, 
@@ -27,8 +27,6 @@ def configurar_banco_inicial():
         senha TEXT, 
         perfil TEXT,
         unidade TEXT)''')
-    
-    # Tabela de Respostas
     cursor.execute('''CREATE TABLE IF NOT EXISTS respostas (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         id_usuario INTEGER, 
@@ -36,12 +34,7 @@ def configurar_banco_inicial():
         nota_enps INTEGER,
         feedback_aberto TEXT, 
         data_envio DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Insere você como ADM
-    cursor.execute("""
-        INSERT OR REPLACE INTO usuarios (id, nome, usuario, senha, perfil, unidade) 
-        VALUES (1, 'João Victor', 'joao.adm', 'fieac123', 'ADM', 'FIEAC')
-    """)
+    cursor.execute("INSERT OR REPLACE INTO usuarios (id, nome, usuario, senha, perfil, unidade) VALUES (1, 'João Victor', 'joao.adm', 'fieac123', 'ADM', 'FIEAC')")
     conn.commit()
     conn.close()
 
@@ -65,9 +58,21 @@ if 'logado' not in st.session_state: st.session_state.logado = False
 if 'respondido' not in st.session_state: st.session_state.respondido = False
 
 if not st.session_state.logado:
+    # --- TELA DE LOGIN PERSONALIZADA (FIEAC ACRE) ---
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.title("📊 Portal eNPS FIEAC")
+        # TENTATIVA DE CARREGAR A LOGO PRINCIPAL
+        # Certifique-se de ter 'logo_fieac.png' na mesma pasta do código
+        if os.path.exists("logo_fieac.png"):
+            # AJUSTE DE TAMANHO: width=200 pixels
+            st.image("logo_fieac.png", width=200)
+        else:
+            # Caso a imagem não seja encontrada, mostra o texto padrão
+            st.markdown("<h1 style='text-align: center; color: #003366;'>SISTEMA FIEAC</h1>", unsafe_allow_html=True)
+            st.warning("Arquivo 'logo_fieac.png' não encontrado na pasta.")
+
+        st.markdown("<h4 style='text-align: center; color: #666666;'>Portal de Qualidade de Vida e eNPS</h4>", unsafe_allow_html=True)
+        st.write("") # Espaçamento
         u = st.text_input("Usuário"); p = st.text_input("Senha", type="password")
         if st.button("Acessar", use_container_width=True):
             conn = conectar(); cursor = conn.cursor()
@@ -79,11 +84,25 @@ if not st.session_state.logado:
             else: st.error("Acesso negado.")
 
 else:
+    # BARRA LATERAL (MENU)
+    # TENTATIVA DE CARREGAR A LOGO PRINCIPAL NA BARRA LATERAL
+    if os.path.exists("logo_fieac.png"):
+        # AJUSTE DE TAMANHO: width=150 pixels
+        st.sidebar.image("logo_fieac.png", width=150)
     st.sidebar.title(f"👤 {st.session_state.nome}")
     if st.sidebar.button("Sair"): st.session_state.clear(); st.rerun()
 
     if st.session_state.perfil == 'ADM':
-        st.title("🛡️ Painel Administrativo")
+        # --- PAINEL ADMINISTRATIVO COM O BANNER DAS 4 CASAS ---
+        # TENTATIVA DE CARREGAR O BANNER DAS 4 CASAS
+        # Certifique-se de ter '4casas.png' na mesma pasta do código
+        if os.path.exists("4casas.png"):
+            # MANTEMOS use_container_width=True para preencher a coluna central
+            st.image("4casas.png", use_container_width=True)
+        else:
+            st.markdown("<h2 style='text-align: center; color: #003366;'>Painel Estratégico UNIPES</h2>", unsafe_allow_html=True)
+            st.warning("Arquivo '4casas.png' não encontrado na pasta.")
+        
         t1, t2, t3 = st.tabs(["📊 Dashboard", "🏢 Por Unidade", "👥 Gestão de Usuários"])
 
         conn = conectar()
@@ -98,7 +117,9 @@ else:
                 d_n = len(df_res[df_res['nota_enps'] <= 6])
                 n_n = len(df_res) - (p_n + d_n)
                 score = ((p_n - d_n) / len(df_res)) * 100
-                fig = go.Figure(go.Pie(labels=['Promotores', 'Passivos', 'Detratores'], values=[p_n, n_n, d_n], hole=.6, marker_colors=['#79b3e1', '#f3d96e', '#d96c4d']))
+                # Gráfico Donut com Cores FIEAC (Tons de Azul)
+                # #79b3e1 (Azul Promotores) | #f3d96e (Amarelo Passivos) | #d96c4d (Laranja Detratores)
+                fig = go.Figure(go.Pie(labels=['Promotores', 'Passivos', 'Detratores'], values=[p_n, n_n, d_n], hole=.6, marker_colors=['#003366', '#f3d96e', '#cc3333']))
                 fig.update_layout(annotations=[dict(text=f"eNPS<br>{int(score)}", x=0.5, y=0.5, font_size=30, showarrow=False)], showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)
                 pdf_bytes = gerar_pdf_estrategico(df_res, score, p_n, n_n, d_n)
@@ -107,7 +128,8 @@ else:
         with t2:
             if not df_res.empty:
                 df_u = df_res.groupby('unidade').apply(lambda x: ((len(x[x['nota_enps']>=9]) - len(x[x['nota_enps']<=6])) / len(x)) * 100).reset_index(name='eNPS')
-                st.plotly_chart(px.bar(df_u, x='unidade', y='eNPS', color='eNPS', color_continuous_scale='RdYlGn'), use_container_width=True)
+                # Gráfico de barras com tons de azul
+                st.plotly_chart(px.bar(df_u, x='unidade', y='eNPS', color='eNPS', color_continuous_scale='Blues'), use_container_width=True)
 
         with t3:
             st.subheader("📥 Importação e Controle de Dados")
@@ -167,6 +189,11 @@ else:
 
     else:
         # TELA DO COLABORADOR (USER)
+        # TENTATIVA DE CARREGAR O BANNER DAS 4 CASAS NO TOPO DA PESQUISA
+        if os.path.exists("4casas.png"):
+            # use_container_width=True para preencher a coluna central
+            st.image("4casas.png", use_container_width=True)
+        
         if not st.session_state.respondido:
             st.title("📝 Qualidade de Vida e Engajamento")
             with st.form("pesquisa"):
